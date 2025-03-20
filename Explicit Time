@@ -60,6 +60,7 @@ u_mat=zeros(3,0);
 omega_mat=zeros(3,0);
 lambda_omega_mat=zeros(3,0);
 lambda_R_mat=zeros(3,0);
+detRmat=zeros(1,0);
 
 for k=tspan
     %display(k)
@@ -76,6 +77,10 @@ for k=tspan
     lambda_R_mat=cat(2,lambda_R_mat,lambda_R_kp1);
     lambda_omega_kp1=fsolve(@(lambda_omega_kp1) -J*lambda_omega_k+J*(F_k-transpose(B_bold_kp1)*hat_map(transpose(F_kp1)*J*omega_kp1))*lambda_omega_kp1+0.5*J*transpose(B_bold_kp1)*(trace(F_kp1)*eye(3)-F_kp1)*lambda_R_kp1,lambda_omega_0,option_disp_off);
     lambda_omega_mat=cat(2,lambda_omega_mat,lambda_omega_kp1);
+
+    % Check special orthogonal characteristics
+    detR=det(R_kp1);
+    detRmat=cat(2,detRmat,detR);
     
     % Re-initialize:
     F_k=F_kp1;
@@ -104,3 +109,25 @@ title('Omega 2')
 subplot(3,2,5)
 plot(tspan,omega_mat(3,:))
 title('Omega 3')
+
+figure
+plot(tspan,detRmat(1,:))
+xlabel('t (s)')
+ylabel('det(R)')
+title('Determinant of R over time')
+
+figure
+subplot(3,1,1)
+plot(tspan,lambda_R_mat(1,:))
+subplot(3,1,2)
+plot(tspan,lambda_R_mat(2,:))
+subplot(3,1,3)
+plot(tspan,lambda_R_mat(3,:))
+
+figure
+subplot(3,1,1)
+plot(tspan,lambda_omega_mat(1,:))
+subplot(3,1,2)
+plot(tspan,lambda_omega_mat(2,:))
+subplot(3,1,3)
+plot(tspan,lambda_omega_mat(3,:))
