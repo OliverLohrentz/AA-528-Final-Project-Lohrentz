@@ -1,0 +1,106 @@
+clc, clear, close all
+%% Given Conditions:
+semi_major_axis=0.8; % m
+semi_minor_axis=0.2; % m
+height_body=0.6; % m
+mass=1; % kg
+J=[0.04,0,0;0,0.19,0;0,0,0.17]; % kg*m^2
+u_bar=0.1; % N*m (maximum control input)
+omega_0=[0;0;0];
+omega_f=[0;0;0];
+R_0=eye(3);
+nu_param=(1/sqrt(3))*[1,1,1];
+theta=120; % degrees
+R_f=diag(exp(theta*(pi/180)*nu_param));
+N=1000; % Number of steps
+h=0.002; % s (Initialed time step)
+% Find initial Lagrange multipliers (initialized randomly)
+scale=1;
+lambda_R_0=scale*[1;1;1];
+lambda_omega_0=scale*[1;1;1];
+
+%% Solve first step:
+J_d=0.5*trace(J)*eye(3)-J;
+scaleF=1;
+F_guess=scaleF*[0,1,0;0,0,1;1,0,0];
+option_disp_off = optimset('Display', 'off');
+% Use eqn 15 to find F_0
+F_0=fsolve(@(F_0) vee_map(cayley_transformation(F_0))*J_d-J_d*transpose(vee_map(cayley_transformation(F_0)))-h*(J*omega_0),F_guess,option_disp_off);
+F_0=inv_cayley_transform(hat_map(F_0));
+display(F_0)
+% Use eqn 27 to find u_1
+u_1=-u_bar*(lambda_omega_0/norm(lambda_omega_0));
+% Use eqns 16 and 17 to find R_1 and omega_1
+R_1=R_0*F_0;
+omega_1=inv(J)*(transpose(F_0)*J*omega_0+h*u_1);
+% Use eqn 15 to find F_1
+F_1=fsolve(@(F_1) vee_map(cayley_transformation(F_1))*J_d-J_d*transpose(vee_map(cayley_transformation(F_1)))-h*(J*omega_1),F_guess,option_disp_off);
+F_1=inv_cayley_transform(hat_map(F_1));
+% Use eqns 26 and 25 to find lambda_R_1 and lambda_omega_1, respectively
+B_bold_0=h*transpose(F_0)*inv(trace(F_0*J_d)*eye(3)-F_0*J_d);
+B_bold_1=h*transpose(F_1)*inv(trace(F_1*J_d)*eye(3)-F_1*J_d);
+lambda_R_1=fsolve(@(lambda_R_1) (trace(F_0)*eye(3)-F_0)*lambda_R_0-F_1*(trace(F_1)*eye(3)-F_1)*lambda_R_1,lambda_R_0,option_disp_off);
+%lambda_omega_1=fsolve(@(lambda_omega_1) -J*lambda_omega_0 + J*(F_1-transpose(B_bold_1)*transpose(F_1)*J*omega_1)*lambda_omega_1 + 0.5*J*transpose(B_bold_1)*(trace(F_1)*eye(3)-F_1)*lambda_R_1,lambda_omega_0,option_disp_off);
+lambda_omega_1=fsolve(@(lambda_omega_1) -J*lambda_omega_0+J*(F_0-transpose(B_bold_1)*hat_map(transpose(F_1)*J*omega_1))*lambda_omega_1+0.5*J*transpose(B_bold_1)*(trace(F_1)*eye(3)-F_1)*lambda_R_1,lambda_omega_0,option_disp_off);
+
+
+%% Solve over tspan
+% Redefine variables:
+tspan=0:h:6;
+F_k=F_1;
+omega_k=omega_1;
+lambda_omega_km1=lambda_omega_0;
+lambda_R_km1=lambda_omega_0;
+lambda_omega_k=lambda_omega_1;
+lambda_R_k=lambda_R_1;
+R_k=R_1;
+
+% Initialize storage matrices:
+u_mat=zeros(3,0);
+omega_mat=zeros(3,0);
+lambda_omega_mat=zeros(3,0);
+lambda_R_mat=zeros(3,0);
+
+for k=tspan
+    %display(k)
+    u_kp1=-u_bar*(lambda_omega_k/norm(lambda_omega_k));
+    u_mat=cat(2,u_mat,u_kp1);
+    R_kp1=R_k*F_k;
+    omega_kp1=inv(J)*(transpose(F_k)*J*omega_k+h*u_kp1);
+    omega_mat=cat(2,omega_mat,omega_kp1);
+    F_kp1=fsolve(@(F_kp1) vee_map(cayley_transformation(F_kp1))*J_d-J_d*transpose(vee_map(cayley_transformation(F_kp1)))-h*(J*omega_kp1),F_guess,option_disp_off);
+    F_kp1=inv_cayley_transform(hat_map(F_kp1));
+    %display(F_kp1)
+    B_bold_kp1=h*transpose(F_kp1)*inv(trace(F_kp1*J_d)*eye(3)-F_kp1*J_d);
+    lambda_R_kp1=fsolve(@(lambda_R_kp1) (trace(F_k)*eye(3)-F_k)*lambda_R_k-F_kp1*(trace(F_kp1)*eye(3)-F_kp1)*lambda_R_kp1,lambda_R_k,option_disp_off);
+    lambda_R_mat=cat(2,lambda_R_mat,lambda_R_kp1);
+    lambda_omega_kp1=fsolve(@(lambda_omega_kp1) -J*lambda_omega_k+J*(F_k-transpose(B_bold_kp1)*hat_map(transpose(F_kp1)*J*omega_kp1))*lambda_omega_kp1+0.5*J*transpose(B_bold_kp1)*(trace(F_kp1)*eye(3)-F_kp1)*lambda_R_kp1,lambda_omega_0,option_disp_off);
+    lambda_omega_mat=cat(2,lambda_omega_mat,lambda_omega_kp1);
+    
+    % Re-initialize:
+    F_k=F_kp1;
+    omega_k=omega_kp1;
+    lambda_omega_k=lambda_omega_kp1;
+    lambda_R_k=lambda_R_kp1;
+    R_k=R_kp1;
+    u_k=u_kp1;
+end
+figure
+subplot(3,2,2)
+plot(tspan,u_mat(1,:))
+title('u 1')
+subplot(3,2,4)
+plot(tspan,u_mat(2,:))
+title('u 2')
+subplot(3,2,6)
+plot(tspan,u_mat(3,:))
+title('u 3')
+subplot(3,2,1)
+plot(tspan,omega_mat(1,:))
+title('Omega 1')
+subplot(3,2,3)
+plot(tspan,omega_mat(2,:))
+title('Omega 2')
+subplot(3,2,5)
+plot(tspan,omega_mat(3,:))
+title('Omega 3')
